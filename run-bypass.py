@@ -4,50 +4,9 @@ import time
 import uuid
 import cloudscraper
 from loguru import logger
+
 import sys
-from flask import Flask, render_template
-from threading import Thread
-
-# Flask setup
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    return "Alive"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# Constants
-PING_INTERVAL = 60
-RETRIES = 60
-DOMAIN_API = {
-    "SESSION": "http://18.136.143.169/api/auth/session",
-    "PING": "http://54.255.192.166/api/network/ping"
-}
-
-CONNECTION_STATES = {
-    "CONNECTED": 1,
-    "DISCONNECTED": 2,
-    "NONE_CONNECTION": 3
-}
-
-status_connect = CONNECTION_STATES["NONE_CONNECTION"]
-browser_id = None
-account_info = {}
-last_ping_time = {}
-
-def uuidv4():
-    return str(uuid.uuid4())
-    
-def valid_resp(resp):
-    if not resp or "code" not in resp or resp["code"] < 0:
-        raise ValueError("Invalid response")
-    return resp
+import time
 
 def show_intro():
     banner = """
@@ -63,7 +22,6 @@ def show_intro():
     THIS IS A BYPASSED VERSION - BY TEAM HUNTERS (https://t.me/team_hunters0)                             
 ---------------------------------------------------------------------------------------------------------
 """
-    # Print banner with slight delay for effect
     for line in banner.splitlines():
         print(line)
         time.sleep(0.05)
@@ -79,6 +37,33 @@ def show_warning():
         print("Exiting...")
         sys.exit()
 
+PING_INTERVAL = 60
+RETRIES = 60
+
+DOMAIN_API = {
+    "SESSION": "http://18.136.143.169/api/auth/session",
+    "PING": "http://52.77.10.116/api/network/ping"
+}
+
+CONNECTION_STATES = {
+    "CONNECTED": 1,
+    "DISCONNECTED": 2,
+    "NONE_CONNECTION": 3
+}
+
+status_connect = CONNECTION_STATES["NONE_CONNECTION"]
+browser_id = None
+account_info = {}
+last_ping_time = {}  
+
+def uuidv4():
+    return str(uuid.uuid4())
+
+def valid_resp(resp):
+    if not resp or "code" not in resp or resp["code"] < 0:
+        raise ValueError("Invalid response")
+    return resp
+
 async def render_profile_info(proxy, token):
     global browser_id, account_info
 
@@ -86,7 +71,6 @@ async def render_profile_info(proxy, token):
         np_session_info = load_session_info(proxy)
 
         if not np_session_info:
-            # Generate new browser_id
             browser_id = uuidv4()
             response = await call_api(DOMAIN_API["SESSION"], {}, proxy, token)
             valid_resp(response)
@@ -126,7 +110,8 @@ async def call_api(url, data, proxy, token):
     try:
         scraper = cloudscraper.create_scraper()
 
-        response = scraper.post(url, json=data, headers=headers, proxies={ "http": proxy, "https": proxy }, timeout=30)
+        response = scraper.post(url, json=data, headers=headers, proxies={
+                                "http": proxy, "https": proxy}, timeout=30)
 
         response.raise_for_status()
         return valid_resp(response.json())
@@ -143,14 +128,14 @@ async def start_ping(proxy, token):
         logger.info(f"Ping task for proxy {proxy} was cancelled")
     except Exception as e:
         logger.error(f"Error in start_ping for proxy {proxy}: {e}")
-
+        
 async def ping(proxy, token):
     global last_ping_time, RETRIES, status_connect
 
     current_time = time.time()
 
     if proxy in last_ping_time and (current_time - last_ping_time[proxy]) < PING_INTERVAL:
-        logger.info(f"Skipping ping for proxy {proxy}, not enough time elapsed")
+        logger.info(f"Skipping ping for proxy { proxy}, not enough time elapsed")
         return
 
     last_ping_time[proxy] = current_time
@@ -158,7 +143,7 @@ async def ping(proxy, token):
     try:
         data = {
             "id": account_info.get("uid"),
-            "browser_id": browser_id,
+            "browser_id": browser_id,  
             "timestamp": int(time.time())
         }
 
@@ -202,36 +187,35 @@ def load_proxies(proxy_file):
         raise SystemExit("Exiting due to failure in loading proxies")
 
 def save_status(proxy, status):
-    pass
+    pass  
 
 def save_session_info(proxy, data):
     data_to_save = {
         "uid": data.get("uid"),
-        "browser_id": browser_id
+        "browser_id": browser_id  
     }
     pass
 
 def load_session_info(proxy):
-    return {}
+    return {}  
 
 def is_valid_proxy(proxy):
-    return True
+    return True  
 
 def remove_proxy_from_list(proxy):
-    pass
+    pass  
 
 async def main():
-    all_proxies = load_proxies('proxies.txt')
+    all_proxies = load_proxies('proxies.txt')  # Load proxies from the file
     
-    # Read token from token.txt
+    # Load token from the token.txt file
     try:
         with open('token.txt', 'r') as token_file:
             token = token_file.read().strip()
-            if not token:
-                print("Token is empty in token.txt. Exiting.")
-                exit()
-    except FileNotFoundError:
-        print("token.txt file not found. Exiting.")
+        if not token:
+            raise ValueError("Token file is empty.")
+    except Exception as e:
+        print(f"Error loading token: {e}")
         exit()
 
     while True:
@@ -242,13 +226,25 @@ async def main():
 
         done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
         for task in done:
-            proxy = tasks[task]
-            try:
-                await task
-            except Exception as e:
-                logger.error(f"Error with proxy {proxy}: {e}")
-        await asyncio.sleep(10)
+            failed_proxy = tasks[task]
+            if task.result() is None:
+                logger.info(f"Removing and replacing failed proxy: {failed_proxy}")
+                active_proxies.remove(failed_proxy)
+                if all_proxies:
+                    new_proxy = all_proxies.pop(0)
+                    if is_valid_proxy(new_proxy):
+                        active_proxies.append(new_proxy)
+                        new_task = asyncio.create_task(
+                            render_profile_info(new_proxy, token))
+                        tasks[new_task] = new_proxy
+            tasks.pop(task)
+
+        for proxy in set(active_proxies) - set(tasks.values()):
+            new_task = asyncio.create_task(
+                render_profile_info(proxy, token))
+            tasks[new_task] = proxy
+        await asyncio.sleep(3)
+    await asyncio.sleep(10)  
 
 if __name__ == "__main__":
-    show_warning()
     asyncio.run(main())
